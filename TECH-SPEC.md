@@ -87,9 +87,9 @@ flowchart LR
 ## 4. Native pose module
 
 ### 4.1 Responsibilities (`PoseCamera.kt`)
-1. Bind CameraX `Preview` and `ImageAnalysis` to the activity lifecycle. Target 640×480, `STRATEGY_KEEP_ONLY_LATEST`, RGBA output. Prefer the front camera, then the back camera, then any camera.
+1. Bind CameraX `Preview` (640×480) and `ImageAnalysis` (320×240; the model resizes to 256 px anyway) to the activity lifecycle. `STRATEGY_KEEP_ONLY_LATEST`, RGBA output. Prefer the front camera, then the back camera, then any camera.
 2. Submit at most one frame to the model at a time (LIVE_STREAM mode), capped by `maxFps`. Busy frames are dropped, never queued.
-3. Rotate the frame bitmap by the camera's rotation plus `contentRotationDeg` (from `start()`) before MediaPipe, and report the upright size. On TV, CameraX target rotation is chosen so the HAL's sensor-orientation claim is ignored (`uprightTargetRotation`). The emulator's webcam bridge delivers frames flipped, so `app/src/config.ts` sets `CAMERA_CONTENT_ROTATION_DEG = 180` (checked against a raw `ffmpeg` capture of `/dev/video0`); real TV webcams need 0.
+3. Pass the camera's rotation plus `contentRotationDeg` (from `start()`) to MediaPipe via `ImageProcessingOptions`. MediaPipe rotates internally (no bitmap copy) but returns landmarks in the unrotated frame, so `onResult` rotates the normalised coordinates into the upright frame and reports the upright size. On TV, CameraX target rotation is chosen so the HAL's sensor-orientation claim is ignored (`uprightTargetRotation`). The emulator's webcam bridge delivers frames flipped, so `app/src/config.ts` sets `CAMERA_CONTENT_ROTATION_DEG = 180` (checked against a raw `ffmpeg` capture of `/dev/video0`); real TV webcams need 0.
 4. Emit one `onPose` event per result: flat `[x, y, z, visibility] × 33`, normalised, plus `inferMs` (submit → result).
 5. Render the preview in a native `PreviewView` inside `PreviewContainer` (`FormVisionCameraPreview`, FIT_CENTER, mirrored by default). `PoseCamera` pushes the same content rotation to the container, which rotates the view and lays it out with width and height swapped. The JS overlay uses the same letterbox mapping on the upright frame size.
 

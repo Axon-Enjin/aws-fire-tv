@@ -17,6 +17,7 @@ import androidx.lifecycle.LifecycleOwner
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.core.Delegate
+import com.google.mediapipe.tasks.vision.core.ImageProcessingOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
@@ -52,8 +53,8 @@ object PoseCamera {
   /** Extra clockwise rotation for sources that deliver pre-rotated pixels (the emulator webcam bridge). */
   @Volatile private var contentRotationDeg = 0
 
-  /** Frame size and submit time of the frame currently in the model (LIVE_STREAM runs one at a time). */
-  @Volatile private var inFlight: Triple<Int, Int, Long>? = null
+  /** The frame currently in the model (LIVE_STREAM runs one at a time). */
+  @Volatile private var inFlight: InFlight? = null
 
   /** Main thread. The container takes the rotation from here so preview and landmarks always agree. */
   fun attachPreview(container: PreviewContainer) {
@@ -86,22 +87,20 @@ object PoseCamera {
           poseListener.onError("NOT_FOUND", "No camera found")
           return@addListener
         }
-        val resolution = ResolutionSelector.Builder()
+        fun resolution(w: Int, h: Int) = ResolutionSelector.Builder()
           .setResolutionStrategy(
-            ResolutionStrategy(
-              android.util.Size(640, 480),
-              ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
-            ),
+            ResolutionStrategy(android.util.Size(w, h), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
           )
           .build()
         val rotation = uprightTargetRotation(context, cameraProvider, selector)
         val previewUseCase = Preview.Builder()
-          .setResolutionSelector(resolution)
+          .setResolutionSelector(resolution(640, 480))
           .setTargetRotation(rotation)
           .build()
         previewContainer?.let { previewUseCase.surfaceProvider = it.preview.surfaceProvider }
         val analysis = ImageAnalysis.Builder()
-          .setResolutionSelector(resolution)
+          // The pose model resizes input to 256 px, so larger analysis frames only cost conversion time.
+          .setResolutionSelector(resolution(320, 240))
           .setTargetRotation(rotation)
           .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
           .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
@@ -179,31 +178,45 @@ object PoseCamera {
       val model = landmarker
       if (!running || model == null || inFlight != null || now - lastSubmittedMs < minFrameIntervalMs) return
       val rotation = (it.imageInfo.rotationDegrees + contentRotationDeg) % 360
-      val raw = it.toBitmap()
-      val bitmap = if (rotation == 0) raw else
-        android.graphics.Bitmap.createBitmap(
-          raw, 0, 0, raw.width, raw.height,
-          android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }, false,
-        )
-      inFlight = Triple(bitmap.width, bitmap.height, now)
+      val bitmap = it.toBitmap()
+      val upright = rotation % 180 == 0
+      inFlight = InFlight(
+        w = if (upright) bitmap.width else bitmap.height,
+        h = if (upright) bitmap.height else bitmap.width,
+        submittedMs = now,
+        rotationDeg = rotation,
+      )
       lastSubmittedMs = now
-      model.detectAsync(BitmapImageBuilder(bitmap).build(), now)
+      // MediaPipe rotates internally (cheap, and the detector needs an upright person) but reports
+      // landmarks in the unrotated frame; onResult maps them to upright coordinates.
+      val options = ImageProcessingOptions.builder().setRotationDegrees(rotation).build()
+      model.detectAsync(BitmapImageBuilder(bitmap).build(), options, now)
     }
   }
 
   private fun onResult(result: PoseLandmarkerResult, @Suppress("UNUSED_PARAMETER") input: com.google.mediapipe.framework.image.MPImage) {
-    val (w, h, submitted) = inFlight ?: return
+    val frame = inFlight ?: return
     inFlight = null
     val pose = result.landmarks().firstOrNull()
     val kp = FloatArray(33 * 4)
     pose?.forEachIndexed { i, lm ->
       if (i >= 33) return@forEachIndexed
-      kp[i * 4] = lm.x()
-      kp[i * 4 + 1] = lm.y()
+      // Clockwise rotation of normalised coordinates into the upright frame.
+      val (x, y) = when (frame.rotationDeg) {
+        90 -> 1f - lm.y() to lm.x()
+        180 -> 1f - lm.x() to 1f - lm.y()
+        270 -> lm.y() to 1f - lm.x()
+        else -> lm.x() to lm.y()
+      }
+      kp[i * 4] = x
+      kp[i * 4 + 1] = y
       kp[i * 4 + 2] = lm.z()
       kp[i * 4 + 3] = lm.visibility().orElse(0f)
     }
     val now = SystemClock.uptimeMillis()
-    listener?.onPose(PoseFrameData(result.timestampMs(), w, h, kp, now - submitted))
+    listener?.onPose(PoseFrameData(result.timestampMs(), frame.w, frame.h, kp, now - frame.submittedMs))
   }
+
+  /** The frame currently in the model: upright size, submit time, and the rotation MediaPipe applied. */
+  private class InFlight(val w: Int, val h: Int, val submittedMs: Long, val rotationDeg: Int)
 }

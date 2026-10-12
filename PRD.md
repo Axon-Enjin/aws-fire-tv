@@ -156,7 +156,7 @@ Out of scope (anti-persona): powerlifters who need bar-velocity tracking; Fire T
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | Vega OS doesn't expose raw camera frames to apps | Happened | Fatal for Vega | Built for Fire OS instead (Gate G1). Documented in FRICTION-LOG.md for the friction-log bonus |
-| Pose pipeline too slow on the emulator (12 Oct: 72–150 ms inference but only 3–5 pose events/s at 4 vCPUs, software GPU) | High | High (NFR-1) | Profile the frame path (camera fps, bitmap rotation, bridge events) before tuning the model; MediaPipe GPU delegate if inference dominates |
+| Pose rate too low on the emulator (13 Oct: camera delivers 3–5 frames/s; app path ≈ 0 ms convert + 60–110 ms model, so it processes every frame) | Certain on this laptop | High (NFR-1) | Bottleneck is the emulator webcam bridge on a saturated 4-thread host (emulator ~175% CPU, browser ~80%). Close other apps during demo capture; a real Fire TV device would not have this limit |
 | No camera-capable Fire TV hardware (cannot be ordered) | Certain | Med | Develop and demo on the laptop webcam (`/dev/video0`) through the simulator. Rules allow simulator/emulator demos (HACKATHON.md:74). Replay source keeps logic work unblocked |
 | Bedrock latency makes cues feel late | Med | Med | Local pre-rendered cue fallback at 1.2 s (FR-13); pre-warm connection |
 | Noisy landmarks cause spurious cues | Med | High (annoying) | Smoothing, debounce, cooldown, visibility gating (FR-3, FR-10, FR-12, FR-5) |
