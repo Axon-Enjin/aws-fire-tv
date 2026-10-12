@@ -8,7 +8,7 @@ Track repo for the Amazon Developer Hackathon. This folder is the whole project:
 
 ## Recommended build
 
-**FormVision** — live pose coaching on a camera-capable Fire TV. MediaPipe runs on the device; only joint angles go to Bedrock for the spoken cue. Rubric total 31, ahead of FitFlow (28) and GymClock+ (24).
+**FormVision:** live pose coaching on a camera-capable Fire TV. MediaPipe runs on the device; only joint angles go to Bedrock for the spoken cue. Rubric total 31, ahead of FitFlow (28) and GymClock+ (24).
 
 Three-year SOM in the report is about $9M ARR at $4.99 a month after the app-store fee. Switch to FitFlow if Vega OS will not expose raw camera frames.
 
@@ -20,3 +20,4 @@ Three-year SOM in the report is about $9M ARR at $4.99 a month after the app-sto
 | [ORG.md](ORG.md) | Amazon, AWS, and device-team goals, copied so this repo stands alone |
 | [PROMPT.md](PROMPT.md) | Deep-research prompt for this track |
 | [Fire-TV-Hackathon-Research.md](Fire-TV-Hackathon-Research.md) | Research report and the three pitches |
+| [docs/index.md](docs/index.md) | Index of the FormVision build documents |
